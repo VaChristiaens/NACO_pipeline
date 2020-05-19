@@ -14,43 +14,29 @@ from os.path import isfile, join
 import numpy as np
 from photutils import CircularAperture, aperture_photometry
 from vip_hci.fits import open_fits, write_fits
-from vip_hci.preproc import frame_fix_badpix_isolated, frame_shift
-from vip_hci.var import frame_filter_lowpass, mask_circle
+from vip_hci.preproc import frame_fix_badpix_isolated
+from vip_hci.var import frame_filter_lowpass
 from hciplot import plot_frames
+import pdb
 import naco_pip.fits_info as fits_info
-from skimage.feature import register_translation
 #no module fits_ifo
 #create a file that user will input values for observations, then read those values into the script.
-#test = input_dataset('/home/lewis/Documents/Exoplanets/data_sets/HD179218/Tests/','/home/lewis/Documents/Exoplanets/data_sets/HD179218/Debug/')
+#test = input_dataset('/home/lewis/Documents/Exoplanets/data_sets/HD179218/Tests/','/home/lewis/Documents/Exoplanets/data_sets/HD179218/Corrected/')
 #create a real_ndit file 
 #discard bad cubes those that are <2/3 of the median size do that check in mk_dico
 
-def find_agpm_list(self, file_list, threshold = 0, verbose = True, debug = False):
+def find_agpm_list(self, file_list, coro = True, threshold = 0):
 
         cube = open_fits(self.outpath + file_list[0])
         nz, ny, nx = cube.shape
         median_frame = np.median(cube, axis = 0)
-        median_frame = frame_filter_lowpass(median_frame, median_size = 7, mode = 'median')       
+        median_frame = frame_filter_lowpass(median_frame, median_size = 7, mode = 'median')
+        write_fits(self.outpath +'median_frame',median_frame)        
         median_frame = frame_filter_lowpass(median_frame, mode = 'gauss',fwhm_size = 5)
-        ycom,xcom = np.unravel_index(np.argmax(median_frame), median_frame.shape)
-        write_fits(self.outpath + 'median_frame', median_frame)
-
-        shadow = np.where(median_frame >threshold, 1, 0)
-        area = sum(sum(shadow))
-        r = np.sqrt(area/np.pi)
-        tmp = np.zeros([ny,nx])
-        tmp = mask_circle(tmp,radius = r, fillwith = 1) #frame_center
-        tmp = frame_shift(tmp, ycom - ny/2 ,xcom - nx/2 )
-        shift_yx, _, _ = register_translation(tmp, shadow,
-                                      upsample_factor= 100)
-        y, x = shift_yx
-        cy = np.round(ycom-y)
-        cx = np.round(xcom-x)
-        if verbose:
-            print('The centre of the shadow is','cy = ',y,'cx = ',cx)
-        if debug:
-            plot_frames((median_frame, shadow, tmp))
+        write_fits(self.outpath +'median_frame_1',median_frame)
+        cy,cx = np.unravel_index(np.argmax(median_frame), median_frame.shape)
         return cy, cx
+    
 
 class input_dataset():
     def __init__(self, inpath, outpath,coro= True):
@@ -75,7 +61,7 @@ class input_dataset():
         self.resel = (self.wavelength*180*3600)/(self.size_telescope *np.pi*
                                                  self.pixel_scale)
         
-    def bad_columns(self, verbose = True, debug = False):
+    def bad_columns(self, verbose = True, debug = True):
 
         bcm = np.zeros((1026, 1024) ,dtype=np.float64)
         #creating bad pixel map
@@ -83,6 +69,8 @@ class input_dataset():
             for j in range(512):
                 bcm[j,i] = 1
 
+        if verbose: 
+            print(self.file_list)
         for fname in self.file_list:
             if verbose:
                 print('about to fix', fname)
@@ -143,9 +131,7 @@ class input_dataset():
            sky_frames = []
            unsat_frames = []
            flat_frames = []
-           
-           if verbose: 
-               print('The making of the dictionary has begun')
+
            for fname in file_list:
                if fname.endswith('.fits') and fname.startswith('NACO'):
                    fits_list.append(fname)
@@ -155,7 +141,7 @@ class input_dataset():
                        header['HIERARCH ESO DPR TYPE'] == 'OBJECT' and \
                        header['HIERARCH ESO DET DIT'] == self.dit_sci and \
                            header['HIERARCH ESO DET NDIT'] in self.ndit_sci and\
-                        cube.shape[0] > 2/3*min(self.ndit_sci):
+                        cube.shape[0] > 2/3*self.ndit_sci:
                             
                         sci_list.append(fname)
                         sci_list_mjd.append(header['MJD-OBS'])
@@ -165,7 +151,7 @@ class input_dataset():
                          header['HIERARCH ESO DPR TYPE'] == 'SKY' and \
                         header['HIERARCH ESO DET DIT'] == self.dit_sci and\
                         header['HIERARCH ESO DET NDIT'] in self.ndit_sky) and\
-                       cube.shape[0] > 2/3*min(self.ndit_sky):
+                       cube.shape[0] > 2/3*self.ndit_sky:
                            
                        sky_list.append(fname)
                        sky_frames.append(cube.shape[0])
@@ -209,17 +195,13 @@ class input_dataset():
                     f.write(sci+'\n')
            
            open(self.outpath+"resel.txt", "w").write(str(self.resel))
-           if verbose: 
-               print('Done :)')
 
 
 #The sky cubes should be identical to the science cubes without the object
-#in the middle, if the skylist is empty it could be caused by misclasification
+#in the middle if the skylist is empty it could be caused by misclasification
 #of the data (or non-existant) we can look for the sky cubes from the science
-#and measure the flux around the star
-#the flux for a sky cube should be significantly lower
-#however the star location is measured from the brightness 
-#if the agpm pos was measured from a sky it would not work (sci are much more common)
+#and measure the flux at the centre of the coronagraph
+#the flux at the centre of the sky cubes should be significantly lower
 
 
     def find_sky_in_sci_cube(self, nres = 3, coro = True, verbose = True, debug = True):
@@ -228,7 +210,7 @@ class input_dataset():
        sci_list = []
        with open(self.outpath+"sci_list.txt", "r") as f:
             tmp = f.readlines()
-            for line in tmp:    
+            for line in tmp:
                 sci_list.append(line.split('\n')[0])
 
        sky_list = []
@@ -236,17 +218,20 @@ class input_dataset():
             tmp = f.readlines()
             for line in tmp:
                 sky_list.append(line.split('\n')[0])
+
+       #draw sci list from dico
+       #find corono centre of the cube.
                 
        cy,cx = find_agpm_list(self, sci_list)
-       if verbose: 
-           print('The rougth location of the star is','y  = ',cy , 'x =',cx)
+       if debug:
+           print(cy,cx)
            #plot_frames(open_fits(self.outpath + sci_list[0])[-1], circle = (cy,cx))
 
        #create the aperture
        circ_aper = CircularAperture((cx,cy), round(nres*self.resel))
        #total flux through the aperture
        for fname in sci_list:
-           cube_fname = open_fits(self.outpath + fname, verbose = debug)
+           cube_fname = open_fits(self.outpath + fname)
            median_frame = np.median(cube_fname, axis = 0)
            circ_aper_phot = aperture_photometry(median_frame,
                                                     circ_aper, method='exact')
@@ -254,37 +239,29 @@ class input_dataset():
            circ_flux = np.array(circ_aper_phot['aperture_sum'])
            flux_list.append(circ_flux[0])
            fname_list.append(fname)
-           if verbose: 
-               print('centre flux has been measured for', fname)
 
        median_flux = np.median(flux_list)
        sd_flux = np.std(flux_list)
-       if verbose:
-           print('Sorting Sky from Sci')
 
        for i in range(len(flux_list)):
            if flux_list[i] < median_flux - 2*sd_flux:
                sky_list.append(fname_list[i])
                sci_list.remove(fname_list[i])
-               symbol = 'bo'
-           if flux_list[i] > median_flux - 2*sd_flux:
-               symbol = 'go'
-           else:
-               symbol = 'ro'
-           plt.plot(i, flux_list[i]/median_flux , symbol)
-       plt.title('Normalised flux around star')
-       plt.ylabel('normalised flux')
-       if debug:
-           plt.savefig(self.outpath + 'flux_plot')
-       plt.show()
-                         
        with open(self.outpath+"sci_list.txt", "w") as f:
                 for sci in sci_list:
                     f.write(sci+'\n')
        with open(self.outpath+"sky_list.txt", "w") as f:
                 for sci in sky_list:
                     f.write(sci+'\n')
-       if verbose:
-           print('done :)')
 
-       
+
+       #plot of centre flux
+       if debug:
+           plt.figure(1)
+           plt.title('Flux of median sci frames at the centre \
+                     of the coronagraph')
+           plt.plot(flux_list, 'bo', label = 'centre flux')
+           plt.ylabel('Flux')
+           plt.legend()
+           plt.savefig(self.outpath + 'flux_plot')
+           plt.show()

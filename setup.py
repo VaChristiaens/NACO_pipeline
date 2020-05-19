@@ -52,7 +52,7 @@ with open(resource('naco_pip', '__init__.py')) as version_file:
     VERSION = VERSION.group(1)
 
 
-PACKAGES = ['naco_pip']
+PACKAGES = ['naco_pip','fits_info']
 setup(
     name='naco_pip',
     version=VERSION,
