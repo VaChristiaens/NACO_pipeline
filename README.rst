@@ -1,9 +1,7 @@
-naco_pip - A pipline for planet detection in NACO data
+naco_pip - planet detecting pipeline
 =======================================================
 
 Introduction
 ------------
 
-``naco_pip`` is a python pipeline designed that relies heavily on VIP in order to detect 
-exoplanets in NACO-VLT images.
-
+``naco_pip`` Is a python based pipeline relying heavily on VIP python package in order to process images of transition disk supplied by NACO/VLT.
