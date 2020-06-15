@@ -6,7 +6,7 @@ Created on Mon Mar 16 15:48:04 2020
 @author: lewis
 """
 __author__ = 'Lewis Picker'
-__all__ = ['input_dataset','find_agpm_list']
+__all__ = ['input_dataset','find_AGPM_list']
 from matplotlib import pyplot as plt
 import os
 from os import listdir
@@ -14,53 +14,36 @@ from os.path import isfile, join
 import numpy as np
 from photutils import CircularAperture, aperture_photometry
 from vip_hci.fits import open_fits, write_fits
-from vip_hci.preproc import frame_fix_badpix_isolated, frame_shift
-from vip_hci.var import frame_filter_lowpass, mask_circle
-from hciplot import plot_frames
+from vip_hci.preproc import frame_fix_badpix_isolated
+from vip_hci.var import frame_filter_lowpass
 import naco_pip.fits_info as fits_info
-from skimage.feature import register_translation
-#no module fits_ifo
-#create a file that user will input values for observations, then read those values into the script.
+import pdb
+
 #test = input_dataset('/home/lewis/Documents/Exoplanets/data_sets/HD179218/Tests/','/home/lewis/Documents/Exoplanets/data_sets/HD179218/Debug/')
-#create a real_ndit file 
-#discard bad cubes those that are <2/3 of the median size do that check in mk_dico
 
-def find_agpm_list(self, file_list, threshold = 0, verbose = True, debug = False):
 
+def find_AGPM_list(self, file_list, verbose = True, debug = False):
+        """
+        This method will find the location of the AGPM
+        it gives a rough approxiamtion of the stars location
+        """
         cube = open_fits(self.outpath + file_list[0])
         nz, ny, nx = cube.shape
         median_frame = np.median(cube, axis = 0)
         median_frame = frame_filter_lowpass(median_frame, median_size = 7, mode = 'median')       
         median_frame = frame_filter_lowpass(median_frame, mode = 'gauss',fwhm_size = 5)
         ycom,xcom = np.unravel_index(np.argmax(median_frame), median_frame.shape)
-        write_fits(self.outpath + 'median_frame', median_frame)
-
-        shadow = np.where(median_frame >threshold, 1, 0)
-        area = sum(sum(shadow))
-        r = np.sqrt(area/np.pi)
-        tmp = np.zeros([ny,nx])
-        tmp = mask_circle(tmp,radius = r, fillwith = 1) #frame_center
-        tmp = frame_shift(tmp, ycom - ny/2 ,xcom - nx/2 )
-        shift_yx, _, _ = register_translation(tmp, shadow,
-                                      upsample_factor= 100)
-        y, x = shift_yx
-        cy = np.round(ycom-y)
-        cx = np.round(xcom-x)
         if verbose:
-            print('The centre of the shadow is','cy = ',y,'cx = ',cx)
+            print('The location of the AGPM is','ycom =',ycom,'xcom =', xcom)
         if debug:
-            plot_frames((median_frame, shadow, tmp))
-        return cy, cx
+            pdb.set_trace()
+        return [ycom, xcom]
 
 class input_dataset():
-    def __init__(self, inpath, outpath,coro= True):
-        # dit_sci, ndit_sci,ndit_sky, dit_unsat, ndit_unsat, dit_flat,wavelegnth, size_telescope, pixel_scale, 
-        
+    def __init__(self, inpath, outpath,coro= True): 
         self.inpath = inpath
         self.outpath = outpath
-        #creates a list of all files in the path
         old_list = os.listdir(self.inpath)
-        #removes non .fits files
         self.file_list = [file for file in  old_list if file.endswith('.fits')]        
         self.dit_sci = fits_info.dit_sci
         self.ndit_sci = fits_info.ndit_sci
@@ -76,9 +59,12 @@ class input_dataset():
                                                  self.pixel_scale)
         
     def bad_columns(self, verbose = True, debug = False):
-
-        bcm = np.zeros((1026, 1024) ,dtype=np.float64)
+        """
+        In NACO data there are systematic bad columns in the lower left quadrant
+        This method will correct those bad colums with the median of the neighbouring pixels
+        """
         #creating bad pixel map
+        bcm = np.zeros((1026, 1024) ,dtype=np.float64)
         for i in range(3, 509, 8):
             for j in range(512):
                 bcm[j,i] = 1
@@ -213,16 +199,13 @@ class input_dataset():
                print('Done :)')
 
 
-#The sky cubes should be identical to the science cubes without the object
-#in the middle, if the skylist is empty it could be caused by misclasification
-#of the data (or non-existant) we can look for the sky cubes from the science
-#and measure the flux around the star
-#the flux for a sky cube should be significantly lower
-#however the star location is measured from the brightness 
-#if the agpm pos was measured from a sky it would not work (sci are much more common)
-
-
     def find_sky_in_sci_cube(self, nres = 3, coro = True, verbose = True, debug = True):
+       """
+       Empty SKY list could be caused by a misclasification of the header in NACO data
+       This method will check the flux of the SCI cubes around the location of the AGPM 
+       A SKY cube should be less bright at that location allowing the seperation of cubes
+       """
+
        flux_list = []
        fname_list = []
        sci_list = []
@@ -237,13 +220,12 @@ class input_dataset():
             for line in tmp:
                 sky_list.append(line.split('\n')[0])
                 
-       cy,cx = find_agpm_list(self, sci_list)
+       agpm_pos = find_AGPM_list(self, sci_list)
        if verbose: 
-           print('The rougth location of the star is','y  = ',cy , 'x =',cx)
-           #plot_frames(open_fits(self.outpath + sci_list[0])[-1], circle = (cy,cx))
+           print('The rougth location of the star is','y  = ', agpm_pos[0] , 'x =', agpm_pos[1])
 
        #create the aperture
-       circ_aper = CircularAperture((cx,cy), round(nres*self.resel))
+       circ_aper = CircularAperture((agpm_pos[1],agpm_pos[0]), round(nres*self.resel))
        #total flux through the aperture
        for fname in sci_list:
            cube_fname = open_fits(self.outpath + fname, verbose = debug)
