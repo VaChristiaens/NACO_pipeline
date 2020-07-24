@@ -18,4 +18,4 @@ ndit_unsat = [400]
 dit_flat = 0.2
 wavelength = 3.8e-6 #meters
 size_telescope = 8.2 #meters
-pixel_scale = 0.02719
+pixel_scale = 0.02719  #arcsecs per pixel

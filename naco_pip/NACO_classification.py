@@ -7,6 +7,8 @@ Created on Mon Mar 16 15:48:04 2020
 """
 __author__ = 'Lewis Picker'
 __all__ = ['input_dataset','find_AGPM_list']
+import matplotlib as mpl
+mpl.use('Agg')
 from matplotlib import pyplot as plt
 import os
 from os import listdir
@@ -51,12 +53,7 @@ class input_dataset():
         self.dit_unsat = fits_info.dit_unsat
         self.ndit_unsat = fits_info.ndit_unsat
         self.dit_flat = fits_info.dit_flat
-        self.wavelength = fits_info.wavelength
-        self.size_telescope = fits_info.size_telescope
-        self.pixel_scale = fits_info.pixel_scale
-        #resoluton element.
-        self.resel = (self.wavelength*180*3600)/(self.size_telescope *np.pi*
-                                                 self.pixel_scale)
+
         
     def bad_columns(self, verbose = True, debug = False):
         """
@@ -74,8 +71,10 @@ class input_dataset():
                 print('Fixing', fname)
             tmp, header_fname = open_fits(self.inpath + fname,
                                                 header = True, verbose = debug)
-            #crop the bad pixcel map to the same dimentions of the frames
-            if len(tmp) == 3:
+            if verbose:
+                print(tmp.shape)
+            #crop the bad pixel map to the same dimentions of the frames
+            if len(tmp.shape) == 3:
                 nz, ny, nx = tmp.shape
                 cy, cx = ny/2 , nx/2
                 ini_y, fin_y = int(512-cy), int(512+cy)
@@ -194,13 +193,11 @@ class input_dataset():
            with open(self.outpath+"flat_list.txt", "w") as f:
                 for sci in flat_list:
                     f.write(sci+'\n')
-           
-           open(self.outpath+"resel.txt", "w").write(str(self.resel))
            if verbose: 
                print('Done :)')
 
 
-    def find_sky_in_sci_cube(self, nres = 3, coro = True, verbose = True, plot = False, debug = True):
+    def find_sky_in_sci_cube(self, nres = 3, coro = True, verbose = True, plot = None, debug = False):
        """
        Empty SKY list could be caused by a misclasification of the header in NACO data
        This method will check the flux of the SCI cubes around the location of the AGPM 
@@ -221,6 +218,9 @@ class input_dataset():
             tmp = f.readlines()
             for line in tmp:
                 sky_list.append(line.split('\n')[0])
+                
+       self.resel = (fits_info.wavelength*180*3600)/(fits_info.size_telescope *np.pi*
+                                                 fits_info.pixel_scale)
                 
        agpm_pos = find_AGPM_list(self, sci_list)
        if verbose: 
@@ -251,17 +251,19 @@ class input_dataset():
                sky_list.append(fname_list[i])
                sci_list.remove(fname_list[i])
                symbol = 'bo'
-           if flux_list[i] > median_flux - 2*sd_flux:
-               symbol = 'go'
-           else:
-               symbol = 'ro'
-           plt.plot(i, flux_list[i]/median_flux , symbol)
-       plt.title('Normalised flux around star')
-       plt.ylabel('normalised flux')
-       if debug:
-           plt.savefig(self.outpath + 'flux_plot')
-       if plot:
-           plt.show()
+           if plot: 
+               if flux_list[i] > median_flux - 2*sd_flux:
+                   symbol = 'go'
+               else:
+                   symbol = 'ro'
+               plt.plot(i, flux_list[i]/median_flux , symbol)
+       if plot:         
+           plt.title('Normalised flux around star')
+           plt.ylabel('normalised flux')
+           if plot == 'save':
+               plt.savefig(self.outpath + 'flux_plot')
+           if plot == 'show':
+               plt.show()
                          
        with open(self.outpath+"sci_list.txt", "w") as f:
                 for sci in sci_list:
